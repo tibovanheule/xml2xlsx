@@ -38,7 +38,7 @@ setup(
     ],
     keywords='xml lxml xlsx development',
     packages=['xml2xlsx'],
-    install_requires=['lxml>=3.6', 'openpyxl>=2.4.7,<2.5', 'six>=1.10'],
+    install_requires=['lxml>=3.6', 'openpyxl>=2.5.0', 'six>=1.10'],
     test_requires=['nose', 'tox', 'coverage'],
     entry_points={
         'console_scripts': ['xml2xlsx=xml2xlsx.command_line:main'],
