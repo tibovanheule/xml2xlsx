@@ -4,28 +4,27 @@ from __future__ import unicode_literals
 import logging
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
+from io import BytesIO
 from string import Formatter
 
 from lxml import etree
 from openpyxl import Workbook
+from openpyxl.cell import WriteOnlyCell
 from openpyxl.styles import Font
 from openpyxl.styles.alignment import Alignment
 from openpyxl.styles.fills import PatternFill
 from openpyxl.styles.named_styles import NamedStyle
 from openpyxl.utils import get_column_letter, column_index_from_string
-from openpyxl.writer.excel import save_virtual_workbook
-from openpyxl.writer.write_only import WriteOnlyCell
-from six import iteritems, text_type
+from six import text_type
 
 logger = logging.getLogger(__name__)
 
 
-class CellRef(object):
+class CellRef:
     """
-    Handy class to store cell reference and add sheet name when casted to
-    unicode, if needed.
+    Handy class to store cell reference and add sheet name when cast to Unicode, if needed.
 
-    Returns referneces in ``sheet!column-row`` Excel style.
+    Returns references in ``sheet!column-row`` Excel style.
     """
 
     def __init__(self, target, row, col, sheet_title=None):
@@ -52,11 +51,15 @@ class CellRef(object):
             )
 
 
-class XML2XLSXTarget(object):
+class XML2XLSXTarget:
 
     def __init__(self, write_only=False):
         self.write_only = write_only
+
         self.wb = Workbook(write_only=write_only)
+        if self.wb.sheetnames:
+            std = self.wb['Sheet']
+            self.wb.remove(std)
         self._current_ws = None
         self._row_buf = []
         self._cell = None
@@ -70,10 +73,10 @@ class XML2XLSXTarget(object):
         }
 
     @staticmethod
-    def _parse_descriptor(descriptor):
+    def _parse_descriptor(descriptor) -> dict:
         params = dict([v.split(':') for v in descriptor.split(';') if v.strip()])
         result = {}
-        for param, value in iteritems(params):
+        for param, value in params.items():
             param = param.strip()
             value = value.strip()
             if value in ['True', 'False']:
@@ -89,45 +92,33 @@ class XML2XLSXTarget(object):
         return result
 
     @staticmethod
-    def _get_font(desc):
+    def _get_font(desc) -> Font or None:
         return Font(**XML2XLSXTarget._parse_descriptor(desc))
 
     @staticmethod
-    def _get_alignment(desc):
+    def _get_alignment(desc) -> Alignment or None:
         return Alignment(**XML2XLSXTarget._parse_descriptor(desc))
 
     @staticmethod
-    def _get_fill(desc):
+    def _get_fill(desc) -> PatternFill or None:
         params = XML2XLSXTarget._parse_descriptor(desc)
         if params['fill_type'] == 'solid':
             return PatternFill(**params)
         elif params['fill_type'] == 'gradient':
             raise NotImplementedError('Gradient fills are not supported')
             # return GradientFill(**params)
+        return None
 
-    def start(self, tag, attrib):
+    def start(self, tag, attrib) -> None:
 
         if not self._current_ws:
             self._current_ws = self.wb.active
-            if 'title' in attrib:
-                self._current_ws.title = attrib['title']
 
         if tag == 'sheet':
-            if not self._current_ws:
-                if self.write_only:
-                    self._current_ws = self.wb.create_sheet(
-                        title=attrib.get('title', 'Sheet')
-                    )
-                else:
-                    self._current_ws = self.wb.active
-                    if 'title' in attrib:
-                        self._current_ws.title = attrib['title']
-            else:
-                index = int(attrib.get('index')) if 'index' in attrib else None
-                self._current_ws = self.wb.create_sheet(
-                    title=attrib.get('title', None), index=index
-                )
-
+            index = int(attrib.get('index')) if 'index' in attrib else None
+            self._current_ws = self.wb.create_sheet(
+                title=attrib.get('title', None), index=index
+            )
             self._row = 0
         elif tag == 'columns':
             start = column_index_from_string(attrib['start'])
@@ -141,7 +132,7 @@ class XML2XLSXTarget(object):
             self._col = 0
         elif tag == 'cell':
             self._cell = WriteOnlyCell(self._current_ws)
-            for attr, value in iteritems(attrib):
+            for attr, value in attrib.items():
                 if attr == 'font':
                     self._cell.font = self._get_font(value)
                 elif attr == 'fill':
@@ -157,7 +148,7 @@ class XML2XLSXTarget(object):
                     self._cell.number_format = value
                 elif attr == 'rowspan':
                     self._current_ws.merge_cells(
-                        start_row=self._row + 1, start_column= self._col + 1,
+                        start_row=self._row + 1, start_column=self._col + 1,
                         end_row=self._row + int(value), end_column=self._col + 1
                     )
                 elif attr == 'colspan':
@@ -204,54 +195,53 @@ class XML2XLSXTarget(object):
             self._row += 1
             self._refs['row'] = self._row + 1
         elif tag == 'cell':
-            if self._cell.value:
+            if self._cell_type == 'unicode' and isinstance(self._cell.value,
+                                                           str) and self._cell.value:
                 keys = [
                     e[1] for e in Formatter().parse(self._cell.value)
-                    if e[1] != None
+                    if e[1] is not None
                 ]
 
                 stringified = {
                     k: ', '.join(text_type(e) for e in self._refs.get(k, ''))
-                        if hasattr(self._refs.get(k, ''), '__iter__')
-                        else text_type(self._refs.get(k, ''))
+                    if hasattr(self._refs.get(k, ''), '__iter__')
+                    else text_type(self._refs.get(k, ''))
                     for k in keys or []
                 }
                 self._cell.value = self._cell.value.format(**stringified)
-            if self._cell_type == 'number':
-                if self._cell.value:
-                    try:
-                        self._cell.value = Decimal(self._cell.value)
-                    except InvalidOperation:
-                        pass
-            elif self._cell_type == 'date':
-                if self._cell.value:
-                    try:
-                        self._cell.value = datetime.strptime(
-                            self._cell.value, self._cell_date_format).date()
-                    except TypeError:
-                        pass
+            elif self._cell_type == 'number' and self._cell.value:
+                try:
+                    self._cell.value = Decimal(self._cell.value)
+                except InvalidOperation:
+                    pass
+            elif self._cell_type == 'date' and self._cell.value:
+                try:
+                    self._cell.value = datetime.strptime(str(self._cell.value),
+                                                         self._cell_date_format).date()
+                except TypeError:
+                    pass
             self._row_buf.append(self._cell)
             self._cell = None
             self._col += 1
             self._refs['col'] = self._col + 1
 
     def close(self):
-        return save_virtual_workbook(self.wb)
+        with BytesIO() as f:
+            self.wb.save(f)
+            f.seek(0)
+            return f.getvalue()
 
 
 def xml2xlsx(xml):
     """
-    Converts xml in a proper format to a xlsx (MS Excel) file.
+    Converts XML in a proper format to a xlsx (MS Excel) file.
 
-    The XML argument is **not** an Excel file in xml format.
-    :param xml: A string with proper xml.
-    :type xml: unicode
-    :return: Parsed xml that can be saved to a stream.
+    The XML argument is **not** an Excel file in XML format.
+    :param xml: A string with proper XML.
+    :type xml: Unicode
+    :return: Parsed XML that can be saved to a stream.
     """
+    print(xml)
     parser = etree.XMLParser(target=XML2XLSXTarget(), encoding='UTF-8',
                              remove_blank_text=True, huge_tree=True)
     return etree.XML(xml, parser, )
-
-
-__all__ = ['xml2xlsx']
-
