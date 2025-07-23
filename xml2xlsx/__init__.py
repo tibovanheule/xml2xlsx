@@ -241,7 +241,6 @@ def xml2xlsx(xml):
     :type xml: Unicode
     :return: Parsed XML that can be saved to a stream.
     """
-    print(xml)
     parser = etree.XMLParser(target=XML2XLSXTarget(), encoding='UTF-8',
                              remove_blank_text=True, huge_tree=True)
     return etree.XML(xml, parser, )
