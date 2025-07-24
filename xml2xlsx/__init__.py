@@ -6,6 +6,7 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
 from string import Formatter
+from typing import List, Dict
 
 from lxml import etree
 from openpyxl import Workbook
@@ -15,6 +16,7 @@ from openpyxl.styles.alignment import Alignment
 from openpyxl.styles.fills import PatternFill
 from openpyxl.styles.named_styles import NamedStyle
 from openpyxl.utils import get_column_letter, column_index_from_string
+from openpyxl.worksheet.worksheet import Worksheet
 from six import text_type
 
 logger = logging.getLogger(__name__)
@@ -29,7 +31,7 @@ class CellRef:
 
     def __init__(self, target, row, col, sheet_title=None):
         self._target = target
-        self.sheet_title = sheet_title or target._current_ws.title
+        self.sheet_title: str = sheet_title or target._current_ws.title
         self.row = row
         self.col = col
 
@@ -53,43 +55,54 @@ class CellRef:
 
 class XML2XLSXTarget:
 
-    def __init__(self, write_only=False):
-        self.write_only = write_only
+    def __init__(self, write_only: bool = False, cell_names: List[str] | None = None):
+        self.write_only: bool = write_only
 
-        self.wb = Workbook(write_only=write_only)
+        self.wb: Workbook = Workbook(write_only=write_only)
         if self.wb.sheetnames:
             std = self.wb['Sheet']
             self.wb.remove(std)
-        self._current_ws = None
-        self._row_buf = []
+        self._current_ws: Worksheet | None = None
+        self._row_buf: List[WriteOnlyCell] = []
         self._cell = None
-        self._cell_type = None
+        self._cell_type: str | None = None
         self._cell_date_format = None
-        self._row = 0
-        self._col = 0
-        self._refs = {
+        self._row: int = 0
+        self._col: int = 0
+
+        if cell_names and (
+                "row" in cell_names or "sheet" in cell_names or "columns" in cell_names or
+                "style" in
+                cell_names):
+            raise ValueError(u"Cell names 'row', 'columns', 'style' and 'sheet' are reserved")
+        self.cell_names: List[str] = cell_names or []
+        if "cell" not in self.cell_names:
+            self.cell_names.append("cell")
+        self._refs: Dict[str, CellRef | int] = {
             'row': 1,
             'col': 1,
         }
 
     @staticmethod
-    def _parse_descriptor(descriptor) -> dict:
-        params = dict([v.split(':') for v in descriptor.split(';') if v.strip()])
-        result = {}
-        for param, value in params.items():
-            param = param.strip()
-            value = value.strip()
-            if value in ['True', 'False']:
-                result[param] = bool(value)
-            else:
+    def _parse_descriptor(descriptor: str) -> Dict[str, str | bool | int | float]:
+        params: Dict[str, str] = dict([v.split(':') for v in descriptor.split(';') if v.strip()])
+        return {param.strip(): XML2XLSXTarget.parse_type(value.strip()) for param, value in
+                params.items()}
+
+    @staticmethod
+    def parse_type(value: str) -> bool | int | float | str | None:
+        if value is None:
+            return None
+        elif value.lower() in ['true', 'false']:
+            return bool(value.capitalize())
+        else:
+            try:
+                return int(value)
+            except ValueError:
                 try:
-                    result[param] = int(value)
+                    return float(value)
                 except ValueError:
-                    try:
-                        result[param] = float(value)
-                    except ValueError:
-                        result[param] = value
-        return result
+                    return value
 
     @staticmethod
     def _get_font(desc) -> Font or None:
@@ -130,7 +143,7 @@ class XML2XLSXTarget:
         elif tag == 'row':
             self._row_buf = []
             self._col = 0
-        elif tag == 'cell':
+        elif tag in self.cell_names:
             self._cell = WriteOnlyCell(self._current_ws)
             for attr, value in attrib.items():
                 if attr == 'font':
