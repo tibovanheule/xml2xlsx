@@ -1,14 +1,6 @@
 # xml2xlsx
 
-[![image](https://travis-ci.org/pkaczynski/xml2xlsx.svg?branch=master)](https://travis-ci.org/pkaczynski/xml2xlsx)
-
-[![image](https://coveralls.io/repos/github/pkaczynski/xml2xlsx/badge.svg?branch=master)](https://coveralls.io/github/pkaczynski/xml2xlsx?branch=master)
-
-[![image](https://img.shields.io/pypi/v/xml2xlsx.svg)](https://pypi.python.org/pypi/xml2xlsx)
-
-[![image](https://img.shields.io/pypi/pyversions/xml2xlsx.svg)](https://pypi.python.org/pypi/xml2xlsx/)
-
-[![image](https://img.shields.io/pypi/dd/xml2xlsx.svg)](https://pypi.python.org/pypi/xml2xlsx/)
+Forked. Needed cleanup version, feel free to use and/or contribute!
 
 Creating `xlsx` files from `xml` template using
 [openpyxl](https://bitbucket.org/openpyxl/openpyxl).
@@ -28,10 +20,10 @@ An xml file like this one
 
 ```xml
 <workbook>
-    <worksheet title="test">
+    <sheet title="test">
         <row><cell>This</cell><cell>is</cell><cell>a TEST</cell></row>
         <row><cell>Nice, isn't it?</cell></row>
-    </worksheet>
+    </sheet>
 </workbook>
 ```
 
