@@ -207,7 +207,7 @@ class XML2XLSXTarget:
             self._row_buf = []
             self._row += 1
             self._refs['row'] = self._row + 1
-        elif tag == 'cell':
+        elif tag in self.cell_names:
             if self._cell_type == 'unicode' and isinstance(self._cell.value,
                                                            str) and self._cell.value:
                 keys = [
